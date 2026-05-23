@@ -1,19 +1,19 @@
 /**
  * GeminiAgent - Agent Worker for Google Gemini API
- * 
+ *
  * Handles prompt execution, response parsing, and structured JSON output.
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-class GeminiAgent {
+export class GeminiAgent {
   /**
    * Initialize the Gemini agent
    * @param {Object} config - Configuration object
-   * @param {string} config.apiKey - Google Gemini API key
-   * @param {string} config.model - Model name (default: 'gemini-1.5-flash')
-   * @param {number} config.maxTokens - Max response tokens
-   * @param {number} config.temperature - Response temperature (0-1)
+   * @param {string} config.apiKey   - Google Gemini API key
+   * @param {string} config.model    - Model name (default: 'gemini-1.5-flash')
+   * @param {number} config.maxTokens    - Max response tokens
+   * @param {number} config.temperature  - Response temperature (0-1)
    */
   constructor(config = {}) {
     const apiKey = config.apiKey || process.env.GEMINI_API_KEY;
@@ -22,8 +22,9 @@ class GeminiAgent {
       throw new Error('GEMINI_API_KEY not provided and not found in environment variables');
     }
 
-    this.client = new GoogleGenerativeAI({ apiKey });
-    this.model = config.model || 'gemini-1.5-flash';
+    // Correct constructor: takes the key directly, not an object wrapper
+    this.client = new GoogleGenerativeAI(apiKey);
+    this.modelName = config.model || 'gemini-1.5-flash';
     this.maxTokens = config.maxTokens || 2048;
     this.temperature = config.temperature !== undefined ? config.temperature : 0.7;
 
@@ -33,8 +34,8 @@ class GeminiAgent {
 
   /**
    * Execute a prompt against Gemini API
-   * @param {string} prompt - The prompt to send
-   * @param {Object} context - Additional context (not used in basic implementation)
+   * @param {string} prompt   - The prompt to send
+   * @param {Object} context  - Optional key/value context injected as a prefix
    * @returns {Promise<Object>} Structured result object
    */
   async execute(prompt, context = {}) {
@@ -48,42 +49,41 @@ class GeminiAgent {
     try {
       this.executionCount++;
 
-      // Construct messages
-      const messages = this._buildMessages(prompt, context);
+      const fullPrompt = this._buildPrompt(prompt, context);
 
-      // Call Gemini API
-      const response = await this.client.models.generateContent({
-        model: this.model,
-        contents: messages,
+      // Correct SDK path: getGenerativeModel → generateContent
+      const model = this.client.getGenerativeModel({
+        model: this.modelName,
         generationConfig: {
           maxOutputTokens: this.maxTokens,
           temperature: this.temperature,
         },
       });
 
-      // Extract and validate response
-      const text = response.response?.text?.();
+      const result = await model.generateContent(fullPrompt);
+      const text = result.response.text();
+
       if (!text) {
         throw new Error('No response content from Gemini');
       }
 
-      // Attempt JSON parsing
+      // Attempt JSON parsing; fall back to raw text envelope
       let parsedContent;
       try {
         parsedContent = JSON.parse(text);
       } catch {
-        // If not JSON, return as string
         parsedContent = { raw_text: text };
       }
 
-      // Track token usage (if available in response)
-      if (response.response?.usageMetadata) {
-        this.totalTokensUsed += response.response.usageMetadata.totalTokenCount || 0;
+      // Track token usage if available
+      const usage = result.response?.usageMetadata;
+      if (usage?.totalTokenCount) {
+        this.totalTokensUsed += usage.totalTokenCount;
       }
 
       return {
         success: true,
-        model: this.model,
+        model: this.modelName,
         content: parsedContent,
         timestamp: new Date().toISOString(),
         executionCount: this.executionCount,
@@ -92,30 +92,21 @@ class GeminiAgent {
       return {
         success: false,
         error: error.message,
-        model: this.model,
+        model: this.modelName,
         timestamp: new Date().toISOString(),
       };
     }
   }
 
   /**
-   * Build message structure for API call
+   * Build the full prompt string, injecting context as a prefix if supplied
    * @private
    */
-  _buildMessages(prompt, context) {
-    let fullPrompt = prompt;
-
-    // Inject context if available
+  _buildPrompt(prompt, context) {
     if (context && Object.keys(context).length > 0) {
-      fullPrompt = `Context: ${JSON.stringify(context)}\n\nPrompt: ${prompt}`;
+      return `Context: ${JSON.stringify(context)}\n\nPrompt: ${prompt}`;
     }
-
-    return [
-      {
-        role: 'user',
-        parts: [{ text: fullPrompt }],
-      },
-    ];
+    return prompt;
   }
 
   /**
@@ -124,7 +115,7 @@ class GeminiAgent {
    */
   getStats() {
     return {
-      model: this.model,
+      model: this.modelName,
       executionCount: this.executionCount,
       totalTokensUsed: this.totalTokensUsed,
       averageTokensPerExecution:
@@ -134,13 +125,9 @@ class GeminiAgent {
     };
   }
 
-  /**
-   * Reset statistics
-   */
+  /** Reset statistics */
   resetStats() {
     this.executionCount = 0;
     this.totalTokensUsed = 0;
   }
 }
-
-module.exports = { GeminiAgent };

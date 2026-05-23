@@ -3,12 +3,12 @@
   "version": "0.0.1",
   "description": "A streamlined, high-velocity orchestration engine for managing autonomous agent workflows, P2P network telemetry, and local AI execution.",
   "main": "index.js",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "start": "node index.js",
     "dev": "NODE_ENV=development node index.js",
-    "test": "jest --coverage",
-    "test:watch": "jest --watch",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --coverage",
+    "test:watch": "node --experimental-vm-modules node_modules/.bin/jest --watch",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -24,7 +24,8 @@
   "author": "royhodge812",
   "license": "MIT",
   "dependencies": {
-    "@google/generative-ai": "^0.3.0"
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^16.0.0"
   },
   "devDependencies": {
     "eslint": "^8.54.0",
@@ -32,7 +33,7 @@
     "prettier": "^3.1.0"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   },
   "repository": {
     "type": "git",
