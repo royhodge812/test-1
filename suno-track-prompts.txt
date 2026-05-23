@@ -1,0 +1,78 @@
+*Style prompt: 
+quiet rap rock, spoken word cadence, dry upfront vocals, close-mic baritone, brushed snare, muted kick, fingerpicked acoustic guitar, restrained electric guitar, sparse bassline, low-key piano stabs, tape saturation, plate reverb, mono room ambience, 84 BPM, half-time groove, understated grit, disciplined resolve, single-file simplicity
+
+*Lyric Prompt:
+[Verse 1]
+No heavy maze for me
+Just one clean path to see
+A map that you can read
+A codebase on a sleeve
+
+I want the engine lean
+No extra weight between
+The logic and the hand
+The plan and where it lands
+
+[Pre-Chorus]
+When the parts stay close
+You move them fast
+When the shape is clear
+It finally lasts
+
+[Chorus]
+Zero bloat, zero bloat
+Keep it clean, keep it close
+One file, one flow
+That’s the way it goes
+Zero bloat, zero bloat
+Make the whole thing show
+Single-file control
+Let the good work roll
+
+[Verse 2]
+Node in the center room
+Light up the local moon
+Or call the distant door
+And bring the answerோர்
+
+State held in place
+No frantic chase
+You see it, then you change it
+Right where you arranged it
+
+[Pre-Chorus]
+When the parts stay close
+You move them fast
+When the shape is clear
+It finally lasts
+
+[Chorus]
+Zero bloat, zero bloat
+Keep it clean, keep it close
+One file, one flow
+That’s the way it goes
+Zero bloat, zero bloat
+Make the whole thing show
+Single-file control
+Let the good work roll
+
+[Bridge]
+No smoke, no maze
+Just a straight-line blaze
+Deterministic hands
+And a plan that stands
+
+From local to remote
+It all stays in view
+Simple is the power
+When the system moves through
+
+[Final Chorus]
+Zero bloat, zero bloat
+Keep it clean, keep it close
+One file, one flow
+That’s the way it goes
+Zero bloat, zero bloat
+Make the whole thing show
+Single-file control
+Let the good work roll
