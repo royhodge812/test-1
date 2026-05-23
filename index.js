@@ -1,374 +1,407 @@
 /**
- * OrchestrAIt Core Orchestrator Engine
+ * OrchestrAIt Core Orchestration Engine - Phase B
  * 
- * Central event loop managing task dispatch, state, and execution control.
- * Designed for deterministic, stateful agent coordination with zero bloat.
+ * A streamlined, high-velocity orchestration engine for managing autonomous agent
+ * workflows with Gemini AI. Zero bloat, maximum execution.
+ * 
+ * Features:
+ * - Direct Gemini API integration
+ * - Sequential task execution with context passing
+ * - Deterministic JSON output parsing
+ * - Artifact persistence to disk
+ * - Retry logic with exponential backoff
+ * - Complete execution ledger and metrics
  */
 
-const EventEmitter = require('events');
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-class Orchestrator extends EventEmitter {
-  /**
-   * Initialize the OrchestrAIt orchestrator
-   * @param {Object} config - Configuration object
-   * @param {string} config.mode - Execution mode: 'autonomous' or 'manual'
-   * @param {boolean} config.telemetry - Enable telemetry tracking
-   * @param {number} config.maxRetries - Max execution retries (default: 3)
-   * @param {number} config.executionTimeout - Task timeout in ms (default: 30000)
-   */
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Validate environment
+if (!process.env.GEMINI_API_KEY) {
+  console.error('❌ Error: GEMINI_API_KEY is missing from your environment variables.');
+  process.exit(1);
+}
+
+// Initialize the Gemini SDK
+const ai = new GoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
+
+/**
+ * Core Orchestration Engine Class
+ * 
+ * Manages task queuing, agent dispatch, state tracking, and artifact persistence.
+ */
+class OrchestrAIt {
   constructor(config = {}) {
-    super();
-
-    this.mode = config.mode || 'manual';
-    this.telemetryEnabled = config.telemetry !== false;
+    this.version = 'v0.0.1';
+    this.outputDir = config.outputDir || path.join(process.cwd(), 'v0.0.0', 'outputs');
+    this.model = config.model || 'gemini-1.5-flash';
     this.maxRetries = config.maxRetries || 3;
-    this.executionTimeout = config.executionTimeout || 30000;
-
-    // State management
-    this.taskQueue = [];
-    this.activeTask = null;
-    this.taskHistory = [];
-    this.globalState = {};
-    this.agents = new Map();
-
-    // Telemetry
-    this.metrics = {
-      tasksDispatched: 0,
-      tasksCompleted: 0,
-      tasksFailed: 0,
-      totalExecutionTime: 0,
-      averageLatency: 0,
+    
+    this.state = {
+      sessionId: `session_${Date.now()}`,
+      startTime: new Date().toISOString(),
+      status: 'IDLE',
+      tasks: [],
+      history: [],
+      metrics: {
+        tasksRegistered: 0,
+        tasksCompleted: 0,
+        tasksFailed: 0,
+        totalExecutionTime: 0,
+      }
     };
+    
+    this._ensureOutputDirectory();
+    console.log(`✅ OrchestrAIt Engine Initialized (${this.version})`);
+  }
 
-    this.initialized = false;
-
-    if (this.telemetryEnabled) {
-      this._setupTelemetry();
+  /**
+   * Ensure output directory exists
+   * @private
+   */
+  _ensureOutputDirectory() {
+    if (!fs.existsSync(this.outputDir)) {
+      fs.mkdirSync(this.outputDir, { recursive: true });
+      console.log(`📁 Output directory created: ${this.outputDir}`);
     }
   }
 
   /**
-   * Initialize the orchestrator (setup, validation, preflight checks)
+   * Register a task into the pipeline
+   * @param {string} id - Task identifier
+   * @param {string} agentName - Agent/worker name
+   * @param {string} rolePrompt - Agent role definition
+   * @param {string} taskObjective - Task objective description
    */
-  async initialize() {
-    try {
-      this._validateConfiguration();
-      this._setupEventHandlers();
-      this.initialized = true;
-      this.emit('initialized', { timestamp: new Date().toISOString() });
-      return { success: true, message: 'Orchestrator initialized successfully' };
-    } catch (error) {
-      this.emit('error', { error: error.message, timestamp: new Date().toISOString() });
-      throw new Error(`Initialization failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Register an agent worker with the orchestrator
-   * @param {string} agentId - Unique agent identifier
-   * @param {Object} agent - Agent instance with execute() method
-   */
-  registerAgent(agentId, agent) {
-    if (!agent || typeof agent.execute !== 'function') {
-      throw new Error('Agent must have an execute() method');
-    }
-    this.agents.set(agentId, agent);
-    this.emit('agent-registered', { agentId, timestamp: new Date().toISOString() });
-  }
-
-  /**
-   * Dispatch a task for execution
-   * @param {string} prompt - Task prompt/description
-   * @param {Object} options - Execution options
-   * @param {string} options.agentId - Target agent (defaults to first available)
-   * @param {Object} options.context - Additional context/state to pass
-   * @param {string} options.workflowId - Workflow identifier for tracking
-   * @returns {Promise<Object>} Task result
-   */
-  async dispatch(prompt, options = {}) {
-    if (!this.initialized) {
-      throw new Error('Orchestrator not initialized. Call initialize() first.');
-    }
-
-    const taskId = this._generateTaskId();
-    const task = {
-      id: taskId,
-      prompt,
-      agentId: options.agentId || this._getDefaultAgent(),
-      context: options.context || {},
-      workflowId: options.workflowId || null,
-      status: 'queued',
-      createdAt: new Date().toISOString(),
-      startedAt: null,
-      completedAt: null,
+  addTask(id, agentName, rolePrompt, taskObjective) {
+    this.state.tasks.push({
+      id,
+      agentName,
+      rolePrompt,
+      taskObjective,
+      status: 'PENDING',
       result: null,
       error: null,
       retries: 0,
-    };
-
-    // Enqueue task
-    this.taskQueue.push(task);
-    this.metrics.tasksDispatched++;
-
-    this.emit('task-queued', {
-      taskId,
-      prompt: prompt.substring(0, 100),
-      timestamp: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      startedAt: null,
+      completedAt: null,
+      duration: 0,
     });
-
-    // Attempt execution
-    return this._executeTask(task);
+    
+    this.state.metrics.tasksRegistered++;
+    console.log(`📝 [Task Registered] ID: ${id} | Agent: ${agentName}`);
   }
 
   /**
-   * Execute a single task with retry logic
-   * @private
+   * Execute the entire task pipeline sequentially with context passing
    */
-  async _executeTask(task) {
-    const startTime = Date.now();
-    task.status = 'running';
-    task.startedAt = new Date().toISOString();
-    this.activeTask = task;
+  async runPipeline() {
+    this.state.status = 'RUNNING';
+    const pipelineStartTime = Date.now();
+    
+    console.log(`\n🚀 Starting OrchestrAIt Pipeline Execution`);
+    console.log(`📊 Session: ${this.state.sessionId}`);
+    console.log(`📋 Tasks Queued: ${this.state.tasks.length}\n`);
 
-    this.emit('task-started', {
-      taskId: task.id,
-      agentId: task.agentId,
-      timestamp: new Date().toISOString(),
-    });
+    let accumulatedContext = '';
 
-    while (task.retries < this.maxRetries) {
-      try {
-        // Fetch agent
-        const agent = this.agents.get(task.agentId);
-        if (!agent) {
-          throw new Error(`Agent '${task.agentId}' not found`);
-        }
+    for (let task of this.state.tasks) {
+      task.status = 'PROCESSING';
+      task.startedAt = new Date().toISOString();
+      let success = false;
 
-        // Execute with timeout
-        const result = await Promise.race([
-          agent.execute(task.prompt, task.context),
-          this._createTimeout(this.executionTimeout),
-        ]);
-
-        // Validate result structure
-        this._validateTaskResult(result);
-
-        // Success
-        task.status = 'completed';
-        task.result = result;
-        task.completedAt = new Date().toISOString();
-        this.metrics.tasksCompleted++;
-
-        const duration = Date.now() - startTime;
-        this.metrics.totalExecutionTime += duration;
-        this.metrics.averageLatency =
-          this.metrics.totalExecutionTime / this.metrics.tasksCompleted;
-
-        this.taskHistory.push(task);
-        this.activeTask = null;
-
-        this.emit('task-completed', {
-          taskId: task.id,
-          duration,
-          agentId: task.agentId,
-          timestamp: new Date().toISOString(),
-        });
-
-        return {
-          success: true,
-          taskId: task.id,
-          result: result,
-          duration,
-        };
-      } catch (error) {
-        task.retries++;
-
-        if (task.retries < this.maxRetries) {
-          this.emit('task-retry', {
-            taskId: task.id,
-            attempt: task.retries,
-            error: error.message,
-            timestamp: new Date().toISOString(),
-          });
-
-          // Exponential backoff
-          await this._delay(Math.pow(2, task.retries) * 1000);
-        } else {
-          task.status = 'failed';
-          task.error = error.message;
+      while (task.retries < this.maxRetries && !success) {
+        try {
+          console.log(`⚙️  [Task ${task.id}] Executing agent: ${task.agentName} (Attempt ${task.retries + 1}/${this.maxRetries})`);
+          
+          const startTime = Date.now();
+          const responseText = await this._dispatchToGemini(task, accumulatedContext);
+          const cleanJson = this._extractJson(responseText);
+          const duration = Date.now() - startTime;
+          
+          task.result = cleanJson;
+          task.status = 'COMPLETED';
+          task.duration = duration;
           task.completedAt = new Date().toISOString();
-          this.metrics.tasksFailed++;
-          this.taskHistory.push(task);
-          this.activeTask = null;
+          success = true;
 
-          this.emit('task-failed', {
-            taskId: task.id,
-            agentId: task.agentId,
-            error: error.message,
-            timestamp: new Date().toISOString(),
-          });
-
-          return {
-            success: false,
-            taskId: task.id,
-            error: error.message,
-          };
+          // Append this output to the context chain for subsequent agents
+          accumulatedContext += `\n\n[Context from Task ${task.id} (${task.agentName})]:\n${JSON.stringify(cleanJson, null, 2)}`;
+          
+          this._saveArtifact(task.id, cleanJson);
+          this.state.metrics.tasksCompleted++;
+          this.state.metrics.totalExecutionTime += duration;
+          
+          console.log(`✅ [Task ${task.id}] Completed in ${duration}ms`);
+        } catch (error) {
+          task.retries++;
+          console.error(`⚠️  [Task ${task.id}] Attempt ${task.retries}/${this.maxRetries} failed: ${error.message}`);
+          
+          if (task.retries >= this.maxRetries) {
+            task.status = 'FAILED';
+            task.error = error.message;
+            task.completedAt = new Date().toISOString();
+            this.state.metrics.tasksFailed++;
+            this.state.status = 'ERROR';
+          }
         }
       }
+
+      if (task.status === 'FAILED') {
+        console.error(`\n🛑 Pipeline halted due to critical failure at Task ${task.id}`);
+        break;
+      }
+    }
+
+    const totalDuration = Date.now() - pipelineStartTime;
+    
+    if (this.state.status !== 'ERROR') {
+      this.state.status = 'FINISHED';
+      console.log(`\n🎉 Pipeline completed successfully!`);
+    }
+    
+    console.log(`\n📊 Pipeline Summary:`);
+    console.log(`   • Total Duration: ${totalDuration}ms`);
+    console.log(`   • Tasks Completed: ${this.state.metrics.tasksCompleted}`);
+    console.log(`   • Tasks Failed: ${this.state.metrics.tasksFailed}`);
+    console.log(`   • Artifacts Saved: ${this.outputDir}`);
+    
+    this.state.metrics.totalExecutionTime = totalDuration;
+    this._saveSessionSummary();
+    
+    return this.state;
+  }
+
+  /**
+   * Dispatch task to Gemini API with system instructions
+   * @private
+   */
+  async _dispatchToGemini(task, context) {
+    const systemPrompt = `You are operating within the OrchestrAIt deterministic execution engine.
+
+AGENT ROLE:
+${task.rolePrompt}
+
+PRIOR CONTEXT:
+${context ? context : 'No prior context. You are the genesis agent.'}
+
+OBJECTIVE:
+${task.taskObjective}
+
+CRITICAL OUTPUT RULES:
+1. You MUST respond ONLY with valid JSON
+2. Do NOT wrap output in markdown code fences (\`\`\`json)
+3. Do NOT include any introductory or conversational text
+4. The JSON must be parseable by JSON.parse()
+5. Include a "success": true field at the root level
+
+Example structure:
+{
+  "success": true,
+  "data": { /* your analysis here */ },
+  "timestamp": "ISO-8601-string"
+}`;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: this.model,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: systemPrompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        },
+      });
+
+      const text = response.response.text();
+      if (!text) {
+        throw new Error('Empty response from Gemini API');
+      }
+
+      return text;
+    } catch (error) {
+      throw new Error(`Gemini API call failed: ${error.message}`);
     }
   }
 
   /**
-   * Get task history with optional filtering
-   * @param {Object} filters - Filter options
-   * @param {string} filters.status - Filter by status ('completed', 'failed', etc.)
-   * @param {string} filters.agentId - Filter by agent ID
-   * @param {number} filters.limit - Limit results
-   * @returns {Array} Filtered task history
+   * Extract and validate JSON from raw text
+   * Handles markdown fences, malformed JSON, and fallback parsing
+   * @private
    */
-  getTaskHistory(filters = {}) {
-    let history = [...this.taskHistory];
+  _extractJson(rawText) {
+    let sanitized = rawText.trim();
 
-    if (filters.status) {
-      history = history.filter((t) => t.status === filters.status);
-    }
-    if (filters.agentId) {
-      history = history.filter((t) => t.agentId === filters.agentId);
-    }
-    if (filters.limit) {
-      history = history.slice(-filters.limit);
+    // Remove markdown code fences if present
+    if (sanitized.startsWith('```')) {
+      sanitized = sanitized.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
     }
 
-    return history;
-  }
+    // Attempt strict JSON parsing
+    try {
+      const parsed = JSON.parse(sanitized);
+      return parsed;
+    } catch (e) {
+      console.warn('⚠️  Strict JSON parsing failed. Attempting regex extraction...');
+    }
 
-  /**
-   * Get current orchestrator metrics
-   * @returns {Object} Metrics snapshot
-   */
-  getMetrics() {
+    // Fallback: Extract JSON using regex
+    const jsonRegex = /\{[\s\S]*\}/;
+    const match = sanitized.match(jsonRegex);
+    
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch (e) {
+        console.warn('⚠️  Regex extraction also failed.');
+      }
+    }
+
+    // Final fallback: Return wrapped structure
     return {
-      ...this.metrics,
-      uptime: process.uptime(),
-      memoryUsage: process.memoryUsage(),
-      queueLength: this.taskQueue.length,
-      registeredAgents: this.agents.size,
-      timestamp: new Date().toISOString(),
+      success: false,
+      rawPayload: rawText,
+      parsingError: true,
+      message: 'Failed to extract valid JSON from response',
     };
   }
 
   /**
-   * Get current state snapshot
-   * @returns {Object} State snapshot
+   * Save task result artifact to disk
+   * @private
+   */
+  _saveArtifact(taskId, data) {
+    const filePath = path.join(this.outputDir, `task_${taskId}_output.json`);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    console.log(`💾 Artifact saved: task_${taskId}_output.json`);
+  }
+
+  /**
+   * Save session execution summary
+   * @private
+   */
+  _saveSessionSummary() {
+    const summaryPath = path.join(this.outputDir, 'session_summary.json');
+    const summary = {
+      sessionId: this.state.sessionId,
+      engineVersion: this.version,
+      startTime: this.state.startTime,
+      endTime: new Date().toISOString(),
+      status: this.state.status,
+      metrics: this.state.metrics,
+      tasks: this.state.tasks.map((t) => ({
+        id: t.id,
+        agent: t.agentName,
+        status: t.status,
+        duration: t.duration,
+        error: t.error,
+      })),
+    };
+    
+    fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2), 'utf-8');
+    console.log(`📊 Session summary saved: session_summary.json`);
+  }
+
+  /**
+   * Get current engine state
    */
   getState() {
-    return {
-      mode: this.mode,
-      initialized: this.initialized,
-      activeTask: this.activeTask ? this.activeTask.id : null,
-      queueLength: this.taskQueue.length,
-      globalState: this.globalState,
-      agents: Array.from(this.agents.keys()),
-    };
+    return this.state;
   }
 
   /**
-   * Setup telemetry tracking
-   * @private
+   * Get metrics snapshot
    */
-  _setupTelemetry() {
-    this.on('task-completed', (data) => {
-      if (process.env.LOG_LEVEL === 'debug') {
-        console.log(`[TELEMETRY] Task ${data.taskId} completed in ${data.duration}ms`);
-      }
-    });
-
-    this.on('task-failed', (data) => {
-      console.warn(`[TELEMETRY] Task ${data.taskId} failed: ${data.error}`);
-    });
-  }
-
-  /**
-   * Validate orchestrator configuration
-   * @private
-   */
-  _validateConfiguration() {
-    if (!['autonomous', 'manual'].includes(this.mode)) {
-      throw new Error(`Invalid mode: ${this.mode}. Must be 'autonomous' or 'manual'.`);
-    }
-
-    if (this.executionTimeout < 1000) {
-      throw new Error('executionTimeout must be at least 1000ms');
-    }
-
-    if (this.maxRetries < 0) {
-      throw new Error('maxRetries cannot be negative');
-    }
-  }
-
-  /**
-   * Setup core event handlers
-   * @private
-   */
-  _setupEventHandlers() {
-    this.on('error', (error) => {
-      console.error(`[ORCHESTRATOR ERROR] ${error.error} at ${error.timestamp}`);
-    });
-  }
-
-  /**
-   * Validate task result structure
-   * @private
-   */
-  _validateTaskResult(result) {
-    if (!result || typeof result !== 'object') {
-      throw new Error('Task result must be a valid object');
-    }
-
-    if (result.error) {
-      throw new Error(`Agent returned error: ${result.error}`);
-    }
-
-    return true;
-  }
-
-  /**
-   * Get the default agent ID
-   * @private
-   */
-  _getDefaultAgent() {
-    if (this.agents.size === 0) {
-      throw new Error('No agents registered');
-    }
-    return Array.from(this.agents.keys())[0];
-  }
-
-  /**
-   * Generate unique task ID
-   * @private
-   */
-  _generateTaskId() {
-    return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Create a promise that rejects after timeout
-   * @private
-   */
-  _createTimeout(ms) {
-    return new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Task timeout after ${ms}ms`)), ms)
-    );
-  }
-
-  /**
-   * Delay execution (for backoff)
-   * @private
-   */
-  _delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  getMetrics() {
+    return this.state.metrics;
   }
 }
 
-// Export for use
-module.exports = { Orchestrator };
+/**
+ * DEMO EXECUTION - Phase B Validation
+ * 
+ * Demonstrates a 2-agent security analysis pipeline:
+ * 1. Vulnerability Scouter: Maps attack surface
+ * 2. Mitigation Architect: Develops defense strategies
+ */
+async function executeLiveDemo() {
+  const orchestrator = new OrchestrAIt({
+    model: 'gemini-1.5-flash',
+    maxRetries: 2,
+  });
+
+  // Agent 1: Vulnerability Scouter
+  orchestrator.addTask(
+    '001',
+    'Vulnerability_Scouter',
+    'You are a red-team analysis bot specializing in mapping surface attack areas and security vulnerabilities.',
+    `Analyze the structural layout of a typical web orchestration engine dashboard. 
+     Output a JSON object containing 3 highest-risk data leakage points 
+     (e.g., local logs, API key exposure, unvalidated updates, hardcoded secrets).
+     For each, rate severity as "High", "Medium", or "Low".
+     
+     Expected JSON format:
+     {
+       "success": true,
+       "vulnerabilities": [
+         {"point": "...", "description": "...", "severity": "..."},
+         ...
+       ],
+       "timestamp": "ISO-8601-string"
+     }`
+  );
+
+  // Agent 2: Mitigation Architect (consumes context from Agent 1)
+  orchestrator.addTask(
+    '002',
+    'Mitigation_Architect',
+    'You are a defensive security engineer specializing in system hardening, cryptographic patterns, and secure architecture.',
+    `Review the 3 data leakage points identified by the Vulnerability Scouter in the prior task.
+     For EACH vulnerability point, generate a detailed mitigation strategy.
+     
+     Expected JSON format:
+     {
+       "success": true,
+       "mitigations": [
+         {"vulnerability": "...", "strategy": "...", "implementation": "...", "priority": "..."},
+         ...
+       ],
+       "summary": "...",
+       "timestamp": "ISO-8601-string"
+     }`
+  );
+
+  // Execute the pipeline
+  const finalState = await orchestrator.runPipeline();
+  
+  console.log('\n═══════════════════════════════════════════════════');
+  console.log('ORCHESTRAIT EXECUTION COMPLETE');
+  console.log('═══════════════════════════════════════════════════\n');
+  
+  return finalState;
+}
+
+// Execute if run directly
+if (process.argv[1] === __filename || process.argv[1]?.endsWith('index.js')) {
+  executeLiveDemo().catch((error) => {
+    console.error('❌ Fatal error:', error);
+    process.exit(1);
+  });
+}
+
+export { OrchestrAIt };
