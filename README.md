@@ -1,5 +1,5 @@
 # 🎯 OrchestrAIt
-
+[![pages-build-deployment](https://github.com/royhodge812/test-1/actions/workflows/pages/pages-build-deployment/badge.svg?branch=main)](https://github.com/royhodge812/test-1/actions/workflows/pages/pages-build-deployment)
 <div align="center">
 
 [![Node.js][Node.js-badge]][Node.js-url]
