@@ -3,117 +3,318 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>orchestrAIt Operational Matrix</title>
+    <title>Multi-Agent Operations Dashboard</title>
     <style>
+        :root {
+            --bg-color: #0d1117;
+            --card-color: #161b22;
+            --border-color: #30363d;
+            --text-main: #c9d1d9;
+            --text-muted: #8b949e;
+            --green: #2ea44f;
+            --orange: #f0883e;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #0d1117;
-            color: #c9d1d9;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
             margin: 0;
-            padding: 40px 20px;
-            display: flex;
-            justify-content: center;
+            padding: 20px;
         }
-        .container {
-            width: 100%;
-            max-width: 800px;
-        }
-        header {
-            border-bottom: 1px solid #21262d;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
-        h1 {
-            color: #58a6ff;
-            margin: 0 0 10px 0;
-            font-size: 2rem;
-        }
-        .status-badge {
-            background-color: #238636;
+
+        .environment-badge {
+            background-color: var(--green);
             color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            font-weight: 600;
             display: inline-block;
+            padding: 4px 8px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            margin-bottom: 20px;
         }
-        .matrix-card {
-            background-color: #161b22;
-            border: 1px solid #30363d;
+
+        /* Responsive Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        @media (min-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 2fr 1fr;
+            }
+            .full-width {
+                grid-column: span 2;
+            }
+        }
+
+        .card {
+            background-color: var(--card-color);
+            border: 1px solid var(--border-color);
             border-radius: 6px;
             padding: 24px;
         }
-        h2 {
+
+        h2, h3 {
             margin-top: 0;
-            font-size: 1.25rem;
-            color: #f0f6fc;
+            font-weight: 600;
         }
-        ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        li {
-            padding: 12px 0;
-            border-bottom: 1px solid #21262d;
+
+        h2 { font-size: 20px; margin-bottom: 20px; }
+        h3 { font-size: 16px; margin-bottom: 15px; }
+
+        /* Operations List Styles */
+        .op-item {
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        li:last-child {
+
+        .op-item:last-child {
             border-bottom: none;
+            padding-bottom: 0;
         }
-        .task-info {
+
+        .op-item:first-child {
+            padding-top: 0;
+        }
+
+        .op-title {
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .op-assigned {
+            font-size: 13px;
+            color: var(--text-muted);
+            font-family: monospace;
+        }
+
+        .status {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status.verified { color: var(--green); }
+        .status.pending { color: var(--orange); }
+
+        /* Speedometer / Gauge Styles */
+        .gauge-container {
             display: flex;
             flex-direction: column;
+            align-items: center;
+            position: relative;
         }
-        .agent-tag {
-            font-size: 0.8rem;
-            color: #8b949e;
-            font-family: monospace;
-            margin-top: 4px;
+
+        .gauge {
+            width: 100%;
+            max-width: 200px;
+            height: auto;
         }
-        .state-indicator {
+
+        .gauge-bg {
+            fill: none;
+            stroke: #21262d;
+            stroke-width: 12;
+            stroke-linecap: round;
+        }
+
+        .gauge-fill {
+            fill: none;
+            stroke: var(--green);
+            stroke-width: 12;
+            stroke-linecap: round;
+            stroke-dasharray: 283;
+            stroke-dashoffset: 283; /* 283 is empty, 141 is half, 0 is full */
+            transition: stroke-dashoffset 0.5s ease;
+        }
+
+        .gauge-value {
+            font-size: 24px;
             font-weight: bold;
-            font-size: 0.9rem;
+            fill: var(--text-main);
+            font-family: monospace;
         }
-        .pending { color: #d29922; }
-        .completed { color: #3fb950; }
+
+        /* Live Feed Terminal Styles */
+        .terminal {
+            background-color: #05070a;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            height: 180px;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #79c0ff;
+        }
+
+        .terminal-line {
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+
+        .timestamp {
+            color: var(--text-muted);
+            margin-right: 6px;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>orchestrAIt Live Control Panel</h1>
-            <div class="status-badge">GitHub Pages Environment Active</div>
-        </header>
+
+    <div class="environment-badge">GitHub Pages Environment Active</div>
+
+    <div class="dashboard-grid">
         
-        <main class="matrix-card">
+        <div class="card">
             <h2>Current Multi-Agent Operations</h2>
-            <ul>
-                <li>
-                    <div class="task-info">
-                        <span>Deploy static interface index page to GitHub Pages</span>
-                        <span class="agent-tag">Assigned to: User/Manual</span>
-                    </div>
-                    <span class="state-indicator completed">✓ Verified</span>
-                </li>
-                <li>
-                    <div class="task-info">
-                        <span>Establish centralized coordination tracking state board</span>
-                        <span class="agent-tag">Assigned to: GlobalOrchestrator</span>
-                    </div>
-                    <span class="state-indicator completed">✓ Verified</span>
-                </li>
-                <li>
-                    <div class="task-info">
-                        <span>Inject live environment verification loops into runtime</span>
-                        <span class="agent-tag">Assigned to: VerificationAgent</span>
-                    </div>
-                    <span class="state-indicator pending">⏳ Pending</span>
-                </li>
-            </ul>
-        </main>
+            
+            <div class="op-item">
+                <div>
+                    <div class="op-title">Deploy static interface index page to GitHub Pages</div>
+                    <div class="op-assigned">Assigned to: User/Manual</div>
+                </div>
+                <div class="status verified">✓ Verified</div>
+            </div>
+
+            <div class="op-item">
+                <div>
+                    <div class="op-title">Establish centralized coordination tracking state board</div>
+                    <div class="op-assigned">Assigned to: GlobalOrchestrator</div>
+                </div>
+                <div class="status verified">✓ Verified</div>
+            </div>
+
+            <div class="op-item">
+                <div>
+                    <div class="op-title">Inject live environment verification loops into runtime</div>
+                    <div class="op-assigned">Assigned to: VerificationAgent</div>
+                </div>
+                <div class="status pending" id="verification-status">⏳ Pending</div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid-sidebar" style="display: flex; flex-direction: column; gap: 20px;">
+            
+            <div class="card gauge-container">
+                <h3>Runtime Velocity</h3>
+                <svg class="gauge" viewBox="0 0 100 60">
+                    <path class="gauge-bg" d="M 10 50 A 40 40 0 0 1 90 50" />
+                    <path class="gauge-fill" id="gauge-path" d="M 10 50 A 40 40 0 0 1 90 50" />
+                    <text x="50" y="48" text-anchor="middle" class="gauge-value" id="gauge-txt">0%</text>
+                </svg>
+            </div>
+
+            <div class="card">
+                <h3>Live Activity Feed</h3>
+                <div class="terminal" id="terminal-feed">
+                    <div class="terminal-line"><span class="timestamp">[04:00:01]</span> System initialized. Monitoring agent cluster...</div>
+                </div>
+            </div>
+
+        </div>
+
     </div>
+
+    <script>
+// DOM Elements
+const gaugePath = document.getElementById('gauge-path');
+const gaugeTxt = document.getElementById('gauge-txt');
+const terminalFeed = document.getElementById('terminal-feed');
+const verificationStatus = document.getElementById('verification-status');
+
+// Target Repository Details
+const repoOwner = 'royhodge812';
+const repoName = 'test-1';
+const apiEndpoint = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs`;
+
+// Update SVG Gauge
+function updateGauge(percentage, color = 'var(--green)') {
+    const maxOffset = 283;
+    const minOffset = 157;
+    const offset = maxOffset - ((percentage / 100) * (maxOffset - minOffset));
+    
+    gaugePath.style.stroke = color;
+    gaugePath.style.strokeDashoffset = offset;
+    gaugeTxt.textContent = `${Math.round(percentage)}%`;
+}
+
+// Log to Terminal
+function logToTerminal(message) {
+    const now = new Date();
+    const timeStr = now.toTimeString().split(' ')[0];
+    const line = document.createElement('div');
+    line.className = 'terminal-line';
+    line.innerHTML = `<span class="timestamp">[${timeStr}]</span> ${message}`;
+    
+    terminalFeed.appendChild(line);
+    terminalFeed.scrollTop = terminalFeed.scrollHeight;
+}
+
+// Poll GitHub API for Workflow Run Status
+async function checkWorkflowStatus() {
+    try {
+        const response = await fetch(apiEndpoint, {
+            headers: { 'Accept': 'application/vnd.github.v3+json' }
+        });
+        
+        if (!response.ok) throw new Error(`API Status: ${response.status}`);
+        
+        const data = await response.json();
+        if (!data.workflow_runs || data.workflow_runs.length === 0) {
+            logToTerminal("[System] No GitHub Action workflows found in repository.");
+            return;
+        }
+
+        const latestRun = data.workflow_runs[0];
+        const { status, conclusion, name, run_number } = latestRun;
+        
+        logToTerminal(`[GitHub API] Run #${run_number} (${name}): State -> <strong>${status}</strong>`);
+
+        // Map GitHub states to Dashboard UI
+        if (status === 'queued') {
+            updateGauge(15, 'var(--orange)');
+            verificationStatus.className = "status pending";
+            verificationStatus.textContent = "⏳ Queued";
+        } 
+        else if (status === 'in_progress') {
+            updateGauge(50, 'var(--orange)');
+            verificationStatus.className = "status pending";
+            verificationStatus.textContent = "⏳ Building";
+        } 
+        else if (status === 'completed') {
+            if (conclusion === 'success') {
+                updateGauge(100, 'var(--green)');
+                verificationStatus.className = "status verified";
+                verificationStatus.textContent = "✓ Verified";
+            } else {
+                updateGauge(100, '#cf222e'); // Red fill for failure
+                verificationStatus.className = "status pending";
+                verificationStatus.style.color = '#cf222e';
+                verificationStatus.textContent = `❌ ${conclusion}`;
+                logToTerminal(`<span style='color: #cf222e'>[Failure] Run #${run_number} finished with conclusion: ${conclusion}</span>`);
+            }
+        }
+    } catch (error) {
+        logToTerminal(`<span style='color: #cf222e'>[Error] Failed to fetch API: ${error.message}</span>`);
+    }
+}
+
+// Initial check on load
+checkWorkflowStatus();
+
+// Poll every 30 seconds to respect GitHub unauthenticated rate limits (60 req/hr)
+setInterval(checkWorkflowStatus, 30000);
+    </script>
 </body>
 </html>
