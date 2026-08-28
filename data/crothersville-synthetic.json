@@ -1,0 +1,35 @@
+{
+  "municipality": "Crothersville",
+  "state": "IN",
+  "generatedFor": "development-only",
+  "demand": {
+    "forecastType": "public-works-service-demand",
+    "geography": "municipal aggregate",
+    "recentDemand": 0.72,
+    "seasonalBaseline": 0.64,
+    "weatherImpact": 0.58,
+    "assetAge": 0.51,
+    "maintenanceBacklog": 0.69,
+    "serviceTrend": 0.61,
+    "observationCount": 143,
+    "horizonDays": 7
+  },
+  "assets": [
+    {
+      "assetId": "SYN-ROAD-001",
+      "assetType": "road-segment",
+      "geography": "synthetic municipal sector A",
+      "ageYears": 32,
+      "conditionScore": 0.48,
+      "maintenanceBacklog": 0.74
+    },
+    {
+      "assetId": "SYN-DRAIN-001",
+      "assetType": "stormwater-drain",
+      "geography": "synthetic municipal sector B",
+      "ageYears": 21,
+      "conditionScore": 0.71,
+      "maintenanceBacklog": 0.39
+    }
+  ]
+}
